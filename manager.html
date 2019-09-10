@@ -1,0 +1,160 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8"/>
+<title>OnlineAkushukai</title>
+<link rel="stylesheet" href="vendor/bootstrap.min.css">
+<script src="agora-rtm-sdk-1.0.1.js"></script>
+<script src="AgoraRTCSDK-2.9.0.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jquery/3.4.1/jquery.min.js"></script>
+</head>
+<body>
+  <div id="div_join" class="panel panel-default">
+    <div class="panel-body">
+      <button id="publish" class="btn btn-primary" onclick="join()">Join</button>
+    </div>
+  </div>
+  
+  <div class="panel panel-default" style="width:846px;height:560px;float:left;">
+    <div class="panel-heading">Video</div>
+    <div id="video" style="background:#000000;">
+      <!--<div id="agora_remote" style="width:844px;height:517px;margin: 0 auto;"></div>-->
+    </div>
+  </div>
+
+  <div class="panel panel-default" style="width: 350px; height:560px;display:inline-block;">
+    <div class="panel-heading">Chat</div>
+    <div class="panel-body" id="chatBox" style="height:450px; overflow-y: scroll;"></div>
+    <div class="panel-body">
+      <table>
+        <tr>
+        <td><input type="text" name="" class="form-control" id="message" aria-describedby="" placeholder="" style="width:235px;" /></td>
+        <td><button type="submit" class="btn btn-primary" id="btnSendMessage" onclick="sendMessage();">send</button></td>
+        </tr>
+      </table>
+    </div> 
+  </div>
+
+<script language="javascript">
+
+if(!AgoraRTC.checkSystemRequirements()) {
+  alert("Your browser does not support WebRTC!");
+}
+var appID = "";
+var channel = "onlineakushu";
+var client, localStream, camera, microphone;
+var clientUID = 3000;
+var audioSelect = document.querySelector('select#audioSource');
+var videoSelect = document.querySelector('select#videoSource');
+var rtmClient, rtmChannel;
+var clientName = "manager";
+
+function join() {
+
+  console.log("Init AgoraRTC client with App ID: " + appID);
+  client = AgoraRTC.createClient({mode: 'live'});
+  client.init(appID, function () {
+    console.log("AgoraRTC client initialized");
+    client.join("", channel, clientUID, function(uid) {
+      console.log("User " + uid + " join channel successfully");
+    }, function(err) {
+      console.log("Join channel failed", err);
+    });
+  }, function (err) {
+    console.log("AgoraRTC client init failed", err);
+  });
+
+  channelKey = "";
+  client.on('error', function(err) {
+    console.log("Got error msg:", err.reason);
+    if (err.reason === 'DYNAMIC_KEY_TIMEOUT') {
+      client.renewChannelKey(channelKey, function(){
+        console.log("Renew channel key successfully");
+      }, function(err){
+        console.log("Renew channel key failed: ", err);
+      });
+    }
+  });
+
+
+  client.on('stream-added', function (evt) {
+    var stream = evt.stream;
+    console.log("New stream added: " + stream.getId());
+    console.log("Subscribe ", stream);
+    client.subscribe(stream, function (err) {
+      console.log("Subscribe stream failed", err);
+    });
+  });
+
+  client.on('stream-subscribed', function (evt) {
+    var stream = evt.stream;
+    console.log("Subscribe remote stream successfully: " + stream.getId());
+    if ($('div#video #agora_remote'+stream.getId()).length === 0) {
+      $('div#video').append('<div id="agora_remote'+stream.getId()+'" style="float:left; width:422px;height:258px;display:inline-block;"></div>');
+    }
+    stream.play('agora_remote' + stream.getId());
+  });
+  client.on('stream-removed', function (evt) {
+    var stream = evt.stream;
+    stream.stop();
+    $('#agora_remote' + stream.getId()).remove();
+    console.log("Remote stream is removed " + stream.getId());
+  });
+
+  client.on('peer-leave', function (evt) {
+    var stream = evt.stream;
+    if (stream) {
+      stream.stop();
+      $('#agora_remote' + stream.getId()).remove();
+      console.log(evt.uid + " leaved from this channel");
+    }
+  });
+}
+
+
+function joinRTM(){
+  rtmClient =  AgoraRTM.createInstance(appID); 
+  rtmChannel = rtmClient.createChannel(channel);
+  rtmClient.login({uid:clientName}).then(function(){
+
+    rtmChannel.join().then(function(){
+      rtmChannel.on('ChannelMessage', function (message, memberId) {
+        addMessage(message.text);
+      });
+    },function(err) {
+        console.log("Join channel failed", err);
+    });
+  });
+}
+
+function sendMessage(){
+  if($('#message').val() && $('#message').val().length <= 100){
+    var str = escapeHTML($('#message').val());
+    rtmChannel.sendMessage({ text: str }).then(function(){
+    },function(err) {
+    });
+    addMessage(str);
+    $('#message').val("");
+  }
+}
+
+function addMessage(text){
+  $('div#chatBox').append('<div class="comment">'+text+'</div>');
+  $('#chatBox').animate({scrollTop: $('#chatBox')[0].scrollHeight}, 'fast');
+}
+
+function escapeHTML(str) {
+  str = str.replace(/&/g, '&amp;');
+  str = str.replace(/</g, '&lt;');
+  str = str.replace(/>/g, '&gt;');
+  str = str.replace(/"/g, '&quot;');
+  str = str.replace(/'/g, '&#39;');
+  return str;
+}
+
+
+joinRTM();
+
+</script>
+</body>
+</html>

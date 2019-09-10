@@ -1,0 +1,189 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8"/>
+<title>OnlineAkushukai</title>
+<link rel="stylesheet" href="vendor/bootstrap.min.css">
+<script src="AgoraRTCSDK-2.9.0.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jquery/3.4.1/jquery.min.js"></script>
+</head>
+<body>
+  <div id="div_join" class="panel panel-default">
+    <div class="panel-body">
+      <button id="publish" class="btn btn-primary" onclick="join()">Start Live</button>
+      <button id="video_mute" class="btn btn-primary" onclick="videoMute()">Video ON</button>
+      <button id="audio_mute" class="btn btn-primary" onclick="audioMute()">Audio ON</button>
+      <label for="audioSource">mic: </label><select id="audioSource"></select>
+      <label for="videoSource">camera: </label><select id="videoSource"></select>
+      <button id="changeDevice" class="btn btn-primary" onclick="changeDevice()">Change Device</button>
+    </div>
+  </div>
+  
+  <div class="panel panel-default" style="width:846px;height:560px;float:left;">
+    <div class="panel-heading">Video</div>
+    <div id="video" style="background:#000000;">
+        <div id="agora_local" style="float:left; width:422px;height:258px;display:inline-block;"></div>
+    </div>
+  </div>
+
+<script language="javascript">
+
+if(!AgoraRTC.checkSystemRequirements()) {
+  alert("Your browser does not support WebRTC!");
+}
+var appID = "";
+var channel = "onlineakushu";
+var client, localStream, camera, microphone;
+var videoEnable  = true;
+var audioEnable  = true;
+var clientUID = 2000;
+var audioSelect = document.querySelector('select#audioSource');
+var videoSelect = document.querySelector('select#videoSource');
+
+
+function join() {
+
+  console.log("Init AgoraRTC client with App ID: " + appID);
+  client = AgoraRTC.createClient({mode: 'live'});
+  client.init(appID, function () {
+    console.log("AgoraRTC client initialized");
+    client.join("", channel, clientUID, function(uid) {
+      console.log("User " + uid + " join channel successfully");
+      camera = videoSource.value;
+      microphone = audioSource.value;
+      localStream = AgoraRTC.createStream({streamID: clientUID, audio: true, cameraId: camera, microphoneId: microphone, video: true, screen: false});
+      localStream.setVideoProfile('720p_3');
+
+      localStream.init(function() {
+        console.log("getUserMedia successfully");
+        localStream.play('agora_local');
+
+        client.publish(localStream, function (err) {
+          console.log("Publish local stream error: " + err);
+        });
+
+        client.on('stream-published', function (evt) {
+          console.log("Publish local stream successfully");
+        });
+      }, function (err) {
+        console.log("getUserMedia failed", err);
+      });
+
+    }, function(err) {
+      console.log("Join channel failed", err);
+    });
+  }, function (err) {
+    console.log("AgoraRTC client init failed", err);
+  });
+
+  channelKey = "";
+  client.on('error', function(err) {
+    console.log("Got error msg:", err.reason);
+    if (err.reason === 'DYNAMIC_KEY_TIMEOUT') {
+      client.renewChannelKey(channelKey, function(){
+        console.log("Renew channel key successfully");
+      }, function(err){
+        console.log("Renew channel key failed: ", err);
+      });
+    }
+  });
+
+
+  client.on('stream-added', function (evt) {
+    var stream = evt.stream;
+    console.log("New stream added: " + stream.getId());
+    console.log("Subscribe ", stream);
+    client.subscribe(stream, function (err) {
+      console.log("Subscribe stream failed", err);
+    });
+  });
+
+  client.on('stream-subscribed', function (evt) {
+    var stream = evt.stream;
+    console.log("Subscribe remote stream successfully: " + stream.getId());
+    if ($('div#video #agora_remote'+stream.getId()).length === 0) {
+      $('div#video').append('<div id="agora_remote'+stream.getId()+'" style="float:left; width:422px;height:258px;display:inline-block;"></div>');
+    }
+    stream.play('agora_remote' + stream.getId());
+  });
+
+  client.on('stream-removed', function (evt) {
+    var stream = evt.stream;
+    stream.stop();
+    $('#agora_remote' + stream.getId()).remove();
+    console.log("Remote stream is removed " + stream.getId());
+  });
+
+  client.on('peer-leave', function (evt) {
+    var stream = evt.stream;
+    if (stream) {
+      stream.stop();
+      $('#agora_remote' + stream.getId()).remove();
+      console.log(evt.uid + " leaved from this channel");
+    }
+  });
+}
+
+function getDevices() {
+  AgoraRTC.getDevices(function (devices) {
+    for (var i = 0; i !== devices.length; ++i) {
+      var device = devices[i];
+      var option = document.createElement('option');
+      option.value = device.deviceId;
+      if (device.kind === 'audioinput') {
+        option.text = device.label || 'microphone ' + (audioSelect.length + 1);
+        audioSelect.appendChild(option);
+      } else if (device.kind === 'videoinput') {
+        option.text = device.label || 'camera ' + (videoSelect.length + 1);
+        videoSelect.appendChild(option);
+      } else {
+        console.log('Some other kind of source/device: ', device);
+      }
+    }
+  });
+}
+
+function videoMute() {
+    if(videoEnable == true){
+        localStream.disableVideo();
+        $("#video_mute").text("Video OFF");
+        videoEnable = false;
+    }else{
+        localStream.enableVideo();
+        $("#video_mute").text("Video ON");
+        videoEnable = true;
+    }
+}
+
+function audioMute() {
+    if(audioEnable == true){
+        localStream.disableAudio();
+        $("#audio_mute").text("Audio OFF");
+        audioEnable = false;
+    }else{
+        localStream.enableAudio();
+        $("#audio_mute").text("Audio ON");
+        audioEnable = true;
+    }
+}
+
+function changeDevice(){
+  audioSelect = document.querySelector('select#audioSource');
+  videoSelect = document.querySelector('select#videoSource');
+  camera     = videoSource.value;
+  microphone = audioSource.value;
+  var localStream2 = AgoraRTC.createStream({streamID: gUid, audio: true, cameraId: camera, microphoneId: microphone, video: true, screen: false});
+  localStream2.setVideoProfile(videoProfile);
+  localStream2.init(function(){
+    var newVideoTrack = localStream2.getVideoTrack();
+    localStream.replaceTrack(newVideoTrack);
+  });
+}
+
+
+getDevices();
+
+
+</script>
+</body>
+</html>
